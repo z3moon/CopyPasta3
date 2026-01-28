@@ -9,9 +9,7 @@ Instead, if you are authoring a PR for the main branch, add your release note to
 [NEW_RELEASE_NOTES.md](./NEW_RELEASE_NOTES.md).
 
 ## 1.0.1
-
 - Fix version number
 
 ## 1.0.0
-
 - Initial upload
