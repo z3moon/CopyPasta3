@@ -4,3 +4,4 @@
 
 ## Release notes for next branch cut
 - Add release scripts
+- CopyPasta3 icon is properly displayed in the addon list

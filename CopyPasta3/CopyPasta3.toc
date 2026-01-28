@@ -11,6 +11,7 @@
 ## LoadManagers: AddonLoader
 ## X-LoadOn-Always: delayed
 ## X-LoadOn-Slash: /paste
+## IconTexture: Interface\Icons\inv_scroll_08
 
 embeds.xml
 
