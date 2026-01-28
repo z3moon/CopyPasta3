@@ -14,6 +14,12 @@ def update_release():
         return
 
     new_version = sys.argv[1]
+
+    # Validation: Enforce at least 3 version components (e.g., 1.0.0)
+    if not re.match(r'^\d+(\.\d+){2,}$', new_version):
+        print(f"❌ Invalid version format: '{new_version}'. Format must be X.Y.Z (e.g., 1.0.2).")
+        return
+
     toc_path = os.path.join("CopyPasta3", "CopyPasta3.toc")
     main_notes_path = "RELEASE_NOTES.md"
     new_notes_path = "NEW_RELEASE_NOTES.md"
