@@ -104,6 +104,13 @@ def update_release():
         print(f"❌ [ERROR] Source directory '{source_dir}' not found. Zip failed.")
         return
 
+    if os.path.exists(zip_path):
+        print(f"⚠️  File '{zip_filename}' already exists.")
+        response = input("Overwrite? (y/N): ").strip().lower()
+        if response != 'y':
+            print("❌ Aborted.")
+            return
+
     print(f"📦 Creating archive: {zip_path}...")
     with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
         # Walk through the specific addon directory
