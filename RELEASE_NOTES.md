@@ -8,6 +8,9 @@ Instead, if you are authoring a PR for the main branch, add your release note to
 
 [NEW_RELEASE_NOTES.md](./NEW_RELEASE_NOTES.md).
 
+## 1.1.0
+- Support for saving and loading multi-line commands is now available.
+
 ## 1.0.2
 - Add release scripts
 - CopyPasta3 icon is properly displayed in the addon list
