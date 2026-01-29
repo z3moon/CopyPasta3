@@ -1,7 +1,7 @@
 local addonName, vars = ...
 local L = vars.L
 Paste = LibStub("AceAddon-3.0"):NewAddon(addonName)
-local addon = Paste 
+local addon = Paste
 local AceGUI = LibStub("AceGUI-3.0")
 vars.svnrev = vars.svnrev or {}
 local svnrev = vars.svnrev
@@ -18,6 +18,7 @@ local defaults = {
     windowscale = 1.0,
     editscale = 1.0,
     shiftenter = false,
+    savedItems = {},
   }
 }
 
@@ -39,7 +40,7 @@ local function debug(msg)
   end
 end
 
-function addon:myOptions() 
+function addon:myOptions()
 return {
   type = "group",
   set = function(info,val)
@@ -158,7 +159,7 @@ return {
      },
     },
   }
-} 
+}
 end
 
 BINDING_NAME_PASTE = L["Show/Hide the Paste window"]
@@ -207,7 +208,7 @@ function addon:Update()
       frame:ClearAllPoints()
       frame:SetScale(new)
       left = left * old / new
-      top = top * old / new 
+      top = top * old / new
       frame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left, top)
     end
     local file, oldpt, flags = addon.editfont:GetFont()
@@ -279,7 +280,7 @@ end
 function addon:OnEnable()
   debug("OnEnable")
   --self:RegisterEvent("READY_CHECK")
- 
+
   if LDB then
     return
   end
@@ -309,7 +310,7 @@ function addon:OnEnable()
                 end
         end,
      })
-  end 
+  end
 
   if LDBo then
     minimapIcon:Register(addonName, LDBo, settings.minimap)
@@ -324,14 +325,249 @@ function addon:ToggleWindow(keystate)
   if not addon.gui then
     addon:CreateWindow()
   end
-  
+
   if addon.gui:IsShown() then
     addon.gui:Hide()
   else
-    addon.gui:Show()  
+    addon.gui:Show()
     addon.edit:SetFocus()
     addon:Update()
   end
+end
+
+
+function addon:UpdateTree()
+  if not addon.tree then return end
+  local items = {
+    { value = "temp", text = L["[Scratchpad]"] or "[Scratchpad]" }
+  }
+  for i, item in ipairs(settings.savedItems) do
+    local title = item.title
+    if not title or title == "" then title = (L["Untitled"] or "Untitled") .. " " .. i end
+    table.insert(items, { value = tostring(i), text = title })
+  end
+  addon.tree:SetTree(items)
+end
+
+function addon:DrawGroup(container, group)
+   local f = addon.gui
+   addon.selectedGroup = group
+   local isTemp = (group == "temp")
+   local savedItem = nil
+   if not isTemp then
+      savedItem = settings.savedItems[tonumber(group)]
+      if not savedItem then
+         -- Fallback
+         group = "temp"
+         isTemp = true
+         addon.selectedGroup = "temp"
+      end
+   end
+
+   container:ReleaseChildren()
+   -- We use a SimpleGroup to hold the List layout, because container (content of TreeGroup)
+   -- might have specific layout behavior.
+   -- But TreeGroup content SetLayout works fine.
+   -- container:SetLayout("List") -- Doing this might release children again or reset?
+   -- AceGUI: "SetLayout" releases children? No.
+
+   local scroll = AceGUI:Create("ScrollFrame")
+   scroll:SetLayout("List")
+   scroll:SetFullWidth(true)
+   scroll:SetFullHeight(true)
+   container:AddChild(scroll)
+
+   -- 1. Editor
+   local edit = AceGUI:Create("MultiLineEditBox")
+   edit:SetFullWidth(true)
+   edit:SetLabel("")
+   edit:SetNumLines(15)
+   edit:DisableButton(true)
+   edit:SetCallback("OnTextChanged", function(widget, event)
+       addon:UpdateCount()
+       if isTemp then addon.tempContent = widget:GetText() end
+   end)
+   addon.edit = edit
+
+   if not addon.editfont then
+      addon.editfont = CreateFont("PasteEditFont")
+      addon.editfont:CopyFontObject(ChatFontNormal)
+   end
+   edit.editBox:SetFontObject(addon.editfont)
+   addon.editfontnorm = select(2, addon.editfont:GetFont())
+
+   local oldhandler = edit.editBox:GetScript("OnEnterPressed")
+   edit.editBox:SetScript("OnEnterPressed", function(self)
+     if settings.shiftenter and IsShiftKeyDown() then
+       addon.gui:Hide()
+       addon:PasteText(edit:GetText())
+     elseif oldhandler then
+       oldhandler(self)
+     else
+       edit.editBox:Insert("\n")
+     end
+   end)
+
+   scroll:AddChild(edit)
+
+   if isTemp then
+       edit:SetText(addon.tempContent or "")
+   else
+       edit:SetText(savedItem.content or "")
+   end
+
+   -- 2. Store / Title
+   local sg = AceGUI:Create("SimpleGroup")
+   sg:SetLayout("Flow")
+   sg:SetFullWidth(true)
+   scroll:AddChild(sg)
+
+   local titleBox = AceGUI:Create("EditBox")
+   titleBox:SetLabel(L["Title:"] or "Title:")
+   titleBox:SetWidth(200)
+   if not isTemp and savedItem then
+       titleBox:SetText(savedItem.title or "")
+   else
+       titleBox:SetText("")
+   end
+   sg:AddChild(titleBox)
+
+   -- If selecting a saved item, update title box when clicked by user?
+   -- Logic: User selects item -> Title populated above.
+
+   local storeBtn = AceGUI:Create("Button")
+   storeBtn:SetText(L["Store"] or "Store")
+   storeBtn:SetWidth(100)
+   storeBtn:SetCallback("OnClick", function()
+       local title = titleBox:GetText()
+       local content = edit:GetText()
+
+       if isTemp then
+           -- New Item
+           -- Require title?
+           if not title or title == "" then
+              chatMsg(L["Please enter a title to store this command."] or "Please enter a title to store this command.")
+              return
+           end
+           local newItem = { title = title, content = content }
+           table.insert(settings.savedItems, newItem)
+           addon.tempContent = ""  -- Clear scratchpad
+           addon:UpdateTree()
+           addon.tree:SelectByValue(tostring(#settings.savedItems))
+       else
+           -- Update existing
+           local idx = tonumber(group)
+           if settings.savedItems[idx] then
+               settings.savedItems[idx].title = title
+               settings.savedItems[idx].content = content
+               addon:UpdateTree()
+               addon.tree:SelectByValue(group)
+               chatMsg(L["Saved."] or "Saved.")
+           end
+       end
+   end)
+   sg:AddChild(storeBtn)
+
+   -- Delete button (only for saved items)
+   if not isTemp then
+       local deleteBtn = AceGUI:Create("Button")
+       deleteBtn:SetText(L["Delete"] or "Delete")
+       deleteBtn:SetWidth(100)
+       deleteBtn:SetCallback("OnClick", function()
+           addon.deleteTarget = group
+           StaticPopup_Show("PASTE_DELETE_CONFIRM")
+       end)
+       sg:AddChild(deleteBtn)
+   end
+
+   -- 3. Target / Where
+   local w = AceGUI:Create("SimpleGroup")
+   w:SetLayout("Flow")
+   w:SetFullWidth(true)
+   scroll:AddChild(w)
+
+   local target = AceGUI:Create("EditBox")
+   target:SetLabel(L["Whisper Target"] or "Whisper Target")
+   settings.whispertarget = settings.whispertarget or ""
+   target:SetText(settings.whispertarget)
+   target:SetMaxLetters(30)
+   target:SetWidth(180)
+   target:SetCallback("OnTextChanged",function(widget, text)
+     settings.whispertarget = target:GetText()
+   end)
+   target:SetCallback("OnEnterPressed",function(widget)
+     target:ClearFocus()
+   end)
+
+   local where = AceGUI:Create("Dropdown")
+   addon.wherewidget = where
+   where:SetMultiselect(false)
+   where:SetLabel(L["Paste to:"])
+   where:SetWidth(180)
+   where:SetCallback("OnEnter",addon.UpdateWhere)
+   where:SetCallback("OnValueChanged",function(widget, event, key)
+      settings.where = key
+      if key == CHAT_MSG_WHISPER_INFORM or key == BN_WHISPER then
+        target:SetDisabled(false)
+        target:SetFocus()
+      else
+        target:SetDisabled(true)
+      end
+   end)
+   settings.where = settings.where or CHAT_DEFAULT
+   addon.UpdateWhere()
+   where:SetValue(settings.where)
+   target:SetDisabled(settings.where ~= CHAT_MSG_WHISPER_INFORM and settings.where ~= BN_WHISPER)
+
+   w:AddChild(where)
+   w:AddChild(target)
+
+   -- 4. Bottom Buttons
+   local b = AceGUI:Create("SimpleGroup")
+   b:SetLayout("Flow")
+   b:SetFullWidth(true)
+   scroll:AddChild(b)
+
+   local bwidth = 140
+
+   local pcbutton = AceGUI:Create("Button")
+   pcbutton:SetText(L["Paste and Close"])
+   pcbutton:SetWidth(bwidth)
+   pcbutton:SetCallback("OnClick", function(widget, button)
+      f:Hide()
+      addon:PasteText(edit:GetText())
+   end)
+   b:AddChild(pcbutton)
+
+   local pbutton = AceGUI:Create("Button")
+   pbutton:SetText(L["Paste"])
+   pbutton:SetWidth(bwidth)
+   pbutton:SetCallback("OnClick", function(widget, button)
+      addon:PasteText(edit:GetText())
+   end)
+   b:AddChild(pbutton)
+
+   local clear = AceGUI:Create("Button")
+   clear:SetText(L["Clear"])
+   clear:SetWidth(bwidth)
+   clear:SetCallback("OnClick", function(widget, button)
+      if isTemp then
+          edit:SetText("")
+          addon.tempContent = ""
+          addon:UpdateCount()
+          edit:SetFocus()
+      else
+          StaticPopup_Show("PASTE_CLEAR_CONFIRM")
+      end
+   end)
+   b:AddChild(clear)
+
+   addon:UpdateCount()
+
+   -- Handle basic resizing of editor visually?
+   -- ScrollFrame handles overflow.
+   -- We want EditBox to be tall.
+   -- We set it to 15 lines (~200px+).
 end
 
 function addon:CreateWindow()
@@ -341,150 +577,59 @@ function addon:CreateWindow()
   local f = AceGUI:Create("Frame")
   f.frame:SetFrameStrata("MEDIUM")
   f.frame:Raise()
-  f.content:SetFrameStrata("MEDIUM")
-  f.content:Raise()
+  -- f.content:SetFrameStrata("MEDIUM") -- Frame creates Content?
+  -- f.content is internal to AceGUI Frame.
+
   f:Hide()
   addon.gui = f
   f:SetTitle(addonName.."     "..addon.version)
-  --addon:fixTitle()
   f:SetCallback("OnClose", OnClose)
   f:SetLayout("Fill")
   f.frame:SetClampedToScreen(true)
   settings.pos = settings.pos or {}
   f:SetStatusTable(settings.pos)
-  addon.minwidth = 500
-  addon.minheight = 320
-  f:SetWidth(addon.minwidth)
-  f:SetHeight(addon.minheight)
-  f:SetAutoAdjustHeight(true)
+  addon.minwidth = 650
+  addon.minheight = 450
+  f:SetWidth(math.max(settings.pos.width or 0, addon.minwidth))
+  f:SetHeight(math.max(settings.pos.height or 0, addon.minheight))
+  -- f:SetAutoAdjustHeight(true) -- Disable for Fill/Tree
+
   addon:setEscapeHandler(f, function() addon:ToggleWindow() end)
 
-  local c = AceGUI:Create("SimpleGroup")
-  c:SetLayout("List")
-  c:SetFullWidth(true)
-  c:SetFullHeight(true)
-  f:AddChild(c)
-  
-  local edit = AceGUI:Create("MultiLineEditBox")
-  c:AddChild(edit)
-  edit:SetMaxLetters(0)
-  local shortcut = L["Control-V"]
-  if IsMacClient() then
-    shortcut = L["Command-V"]
-  end
-  edit:SetLabel(string.format(L["Use %s to paste the clipboard into this box"], shortcut))
-  edit:SetNumLines(10)
-  edit:SetHeight(170)
-  edit:DisableButton(true)
-  edit:SetFullWidth(true)
-  edit:SetCallback("OnTextChanged", function(widget, t) addon:UpdateCount() end)
-  edit:SetText("")
-  addon.edit = edit
-  addon.editfont = CreateFont("PasteEditFont")
-  addon.editfont:CopyFontObject(ChatFontNormal)
-  edit.editBox:SetFontObject(addon.editfont)
-  addon.editfontnorm = select(2, addon.editfont:GetFont())
+  local tree = AceGUI:Create("TreeGroup")
+  tree:SetLayout("Fill")
+  tree:SetTreeWidth(170)
+  tree:SetFullWidth(true)
+  tree:SetFullHeight(true)
+  tree:SetCallback("OnGroupSelected", function(widget, event, group) addon:DrawGroup(widget, group) end)
+  addon.tree = tree
+  f:AddChild(tree)
 
-  -- AceGUI fails at enforcing minimum Frame resize for a container, so fix it
-  hooksecurefunc(f,"OnHeightSet", function(widget, height) 
-    if (widget ~= addon.gui) then return end 
-    if (height < addon.minheight) then
-      f:SetHeight(addon.minheight)
-    else
-      edit:SetHeight(height - addon.minheight + 170)
-    end
-  end)
-  hooksecurefunc(f,"OnWidthSet", function(widget, width) 
-    if (widget ~= addon.gui) then return end 
+  hooksecurefunc(f,"OnWidthSet", function(widget, width)
+    if (widget ~= addon.gui) then return end
     if (width < addon.minwidth) then
       f:SetWidth(addon.minwidth)
     end
   end)
 
-  local oldhandler = edit.editBox:GetScript("OnEnterPressed")
-  edit.editBox:SetScript("OnEnterPressed", function(self)
-    if settings.shiftenter and IsShiftKeyDown() then
-      f:Hide()
-      addon:PasteText(edit:GetText()) 
-    elseif oldhandler then
-      oldhandler(self)
-    else
-      edit.editBox:Insert("\n")
+   hooksecurefunc(f,"OnHeightSet", function(widget, height)
+    if (widget ~= addon.gui) then return end
+    if (height < addon.minheight) then
+      f:SetHeight(addon.minheight)
+    end
+    -- Calculate EditBox Height?
+    -- With ScrollFrame in DrawGroup, we might not need to manually size the EditBox,
+    -- but a larger EditBox is nice.
+    if addon.edit then
+        -- Approx calculation: Frame Height - Top/Bottom - Sidebar/Controls
+        local h = height - 220
+        if h < 100 then h = 100 end
+        addon.edit:SetHeight(h)
     end
   end)
 
-  local w = AceGUI:Create("SimpleGroup")
-  w:SetLayout("Flow")
-  w:SetFullWidth(true)
-  c:AddChild(w)
-
-  local target = AceGUI:Create("EditBox")
-  settings.whispertarget = settings.whispertarget or ""
-  target:SetText(settings.whispertarget)
-  target:SetMaxLetters(30)
-  target:SetWidth(200)
-  target:SetCallback("OnTextChanged",function(widget, text)
-    settings.whispertarget = target:GetText()
-  end)
-  target:SetCallback("OnEnterPressed",function(widget)
-    target:ClearFocus()
-  end)
-
-  local where = AceGUI:Create("Dropdown")
-  addon.wherewidget = where
-  where:SetMultiselect(false)
-  where:SetLabel(L["Paste to:"])
-  where:SetWidth(200)
-  where:SetCallback("OnEnter",addon.UpdateWhere)
-  where:SetCallback("OnValueChanged",function(widget, event, key) 
-     settings.where = key 
-     if key == CHAT_MSG_WHISPER_INFORM or key == BN_WHISPER then
-       target:SetDisabled(false)
-       target:SetFocus()
-     else
-       target:SetDisabled(true)
-     end
-  end)
-  settings.where = settings.where or CHAT_DEFAULT
-  addon.UpdateWhere()
-  where:SetValue(settings.where)
-  target:SetDisabled(settings.where ~= CHAT_MSG_WHISPER_INFORM and settings.where ~= BN_WHISPER)
-  w:AddChild(where)  
-  w:AddChild(target)
-
-  local b = AceGUI:Create("SimpleGroup")
-  b:SetLayout("Flow")
-  b:SetFullWidth(true)
-  c:AddChild(b)
-
-  local bwidth = 150
-  local pcbutton = AceGUI:Create("Button")
-  pcbutton:SetText(L["Paste and Close"])
-  pcbutton:SetWidth(bwidth)
-  pcbutton:SetCallback("OnClick", function(widget, button) 
-     f:Hide()
-     addon:PasteText(edit:GetText()) 
-  end)
-  b:AddChild(pcbutton)  
-  
-  local pbutton = AceGUI:Create("Button")
-  pbutton:SetText(L["Paste"])
-  pbutton:SetWidth(bwidth)
-  pbutton:SetCallback("OnClick", function(widget, button) 
-     addon:PasteText(edit:GetText())      
-  end)
-  b:AddChild(pbutton)  
-  
-  local clear = AceGUI:Create("Button")
-  clear:SetText(L["Clear"])
-  clear:SetWidth(bwidth)
-  clear:SetCallback("OnClick", function(widget, button) 
-     edit:SetText("")
-     addon:UpdateCount()
-     edit:SetFocus()
-  end)
-  b:AddChild(clear)  
-  
+  addon:UpdateTree()
+  tree:SelectByValue("temp")
 end
 
 addon.wherefn = {
@@ -495,15 +640,15 @@ addon.wherefn = {
   [INSTANCE_CHAT] = function(str) SendChatMessage(str, "INSTANCE_CHAT") end,
   [CHAT_MSG_GUILD] = function(str) SendChatMessage(str, "GUILD") end,
   [CHAT_MSG_OFFICER] = function(str) SendChatMessage(str, "OFFICER") end,
-  [CHAT_MSG_WHISPER_INFORM] = function(str) 
+  [CHAT_MSG_WHISPER_INFORM] = function(str)
      local t = settings.whispertarget
      if not t then
        chatMsg(L["You must select a whisper target!"])
        return
      end
-     SendChatMessage(str, "WHISPER", nil, t) 
+     SendChatMessage(str, "WHISPER", nil, t)
   end,
-  [BN_WHISPER] = function(str) 
+  [BN_WHISPER] = function(str)
      local t = settings.whispertarget
      if not t then
        chatMsg(L["You must select a whisper target!"])
@@ -516,7 +661,7 @@ addon.wherefn = {
      end
      chatMsg(ERR_FRIEND_NOT_FOUND)
   end,
-  [CHAT_DEFAULT] = function(str) 
+  [CHAT_DEFAULT] = function(str)
     ChatFrame_OpenChat("")
     local edit = ChatEdit_GetActiveWindow();
     edit:SetText(str)
@@ -525,7 +670,7 @@ addon.wherefn = {
   end,
 }
 
-function addon.UpdateWhere() 
+function addon.UpdateWhere()
   addon.wherelist = addon.wherelist or {}
   wipe(addon.wherelist)
   local w = addon.wherelist
@@ -573,17 +718,17 @@ end
 function addon:normalizeText(text)
   if not text then return nil end
   text = text:gsub("\r\n","\n")
-  text = text:gsub("\r","\n")  
+  text = text:gsub("\r","\n")
   if settings.stripempty then
-    text = text:gsub("\n%s*\n","\n")  
-    text = text:gsub("^%s*\n","\n")  
-    text = text:gsub("\n%s*$","\n")  
+    text = text:gsub("\n%s*\n","\n")
+    text = text:gsub("^%s*\n","\n")
+    text = text:gsub("\n%s*$","\n")
   end
   if settings.trimwhitespace then
-    text = text:gsub("\n%s*","\n")  
-    text = text:gsub("%s*\n","\n")  
-    text = text:gsub("^%s*","")  
-    text = text:gsub("%s*$","")  
+    text = text:gsub("\n%s*","\n")
+    text = text:gsub("%s*\n","\n")
+    text = text:gsub("^%s*","")
+    text = text:gsub("%s*$","")
   end
   text = strtrim(text)
   return text
@@ -629,12 +774,53 @@ StaticPopupDialogs["PASTE_SLASHWARN"] = {
   button1 = YES,
   button2 = NO,
   button3 = CANCEL,
-  OnAccept = function() 
+  OnAccept = function()
 	settings.where = CHAT_DEFAULT
         addon.wherewidget:SetValue(CHAT_DEFAULT)
 	addon:PasteText(addon.slashwarned)
   end,
   OnCancel = function() addon:PasteText(addon.slashwarned) end,
+  timeout = 0,
+  whileDead = true,
+  hideOnEscape = true,
+  enterClicksFirstButton = false,
+  showAlert = true,
+}
+
+StaticPopupDialogs["PASTE_CLEAR_CONFIRM"] = {
+  text = L["Are you sure you want to clear the contents of this saved item?"] or "Are you sure you want to clear the contents of this saved item?",
+  button1 = YES,
+  button2 = NO,
+  OnAccept = function()
+      if addon.edit then
+         addon.edit:SetText("")
+         addon:UpdateCount()
+         addon.edit:SetFocus()
+      end
+  end,
+  timeout = 0,
+  whileDead = true,
+  hideOnEscape = true,
+  enterClicksFirstButton = false,
+  showAlert = true,
+}
+
+StaticPopupDialogs["PASTE_DELETE_CONFIRM"] = {
+  text = L["Are you sure you want to delete this saved item?"] or "Are you sure you want to delete this saved item?",
+  button1 = YES,
+  button2 = NO,
+  OnAccept = function()
+      local idx = tonumber(addon.deleteTarget)
+      if idx and settings.savedItems[idx] then
+         table.remove(settings.savedItems, idx)
+         addon:UpdateTree()
+         addon.tree:SelectByValue("temp")
+      end
+      addon.deleteTarget = nil
+  end,
+  OnCancel = function()
+      addon.deleteTarget = nil
+  end,
   timeout = 0,
   whileDead = true,
   hideOnEscape = true,
