@@ -486,6 +486,13 @@ function addon:DrawGroup(container, group)
    w:SetFullWidth(true)
    scroll:AddChild(w)
 
+   local where = AceGUI:Create("Dropdown")
+   addon.wherewidget = where
+   where:SetMultiselect(false)
+   where:SetLabel(L["Paste to:"])
+   where:SetWidth(180)
+   where:SetCallback("OnEnter",addon.UpdateWhere)
+
    local target = AceGUI:Create("EditBox")
    target:SetLabel(L["Whisper Target"] or "Whisper Target")
    settings.whispertarget = settings.whispertarget or ""
@@ -499,28 +506,29 @@ function addon:DrawGroup(container, group)
      target:ClearFocus()
    end)
 
-   local where = AceGUI:Create("Dropdown")
-   addon.wherewidget = where
-   where:SetMultiselect(false)
-   where:SetLabel(L["Paste to:"])
-   where:SetWidth(180)
-   where:SetCallback("OnEnter",addon.UpdateWhere)
    where:SetCallback("OnValueChanged",function(widget, event, key)
       settings.where = key
+      -- Show/hide whisper target based on selection
       if key == CHAT_MSG_WHISPER_INFORM or key == BN_WHISPER then
-        target:SetDisabled(false)
+        target.frame:Show()
         target:SetFocus()
       else
-        target:SetDisabled(true)
+        target.frame:Hide()
       end
    end)
    settings.where = settings.where or CHAT_DEFAULT
    addon.UpdateWhere()
    where:SetValue(settings.where)
-   target:SetDisabled(settings.where ~= CHAT_MSG_WHISPER_INFORM and settings.where ~= BN_WHISPER)
 
    w:AddChild(where)
    w:AddChild(target)
+
+   -- Set initial visibility
+   if settings.where == CHAT_MSG_WHISPER_INFORM or settings.where == BN_WHISPER then
+     target.frame:Show()
+   else
+     target.frame:Hide()
+   end
 
    -- 4. Bottom Buttons
    local b = AceGUI:Create("SimpleGroup")
