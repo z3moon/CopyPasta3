@@ -506,14 +506,21 @@ function addon:DrawGroup(container, group)
      target:ClearFocus()
    end)
 
+   -- Store reference to manage visibility
+   addon.whisperTarget = target
+
    where:SetCallback("OnValueChanged",function(widget, event, key)
       settings.where = key
       -- Show/hide whisper target based on selection
       if key == CHAT_MSG_WHISPER_INFORM or key == BN_WHISPER then
-        target.frame:Show()
-        target:SetFocus()
+        if addon.whisperTarget and addon.whisperTarget.frame then
+          addon.whisperTarget.frame:Show()
+          addon.whisperTarget:SetFocus()
+        end
       else
-        target.frame:Hide()
+        if addon.whisperTarget and addon.whisperTarget.frame then
+          addon.whisperTarget.frame:Hide()
+        end
       end
    end)
    settings.where = settings.where or CHAT_DEFAULT
@@ -523,12 +530,14 @@ function addon:DrawGroup(container, group)
    w:AddChild(where)
    w:AddChild(target)
 
-   -- Set initial visibility
-   if settings.where == CHAT_MSG_WHISPER_INFORM or settings.where == BN_WHISPER then
-     target.frame:Show()
-   else
-     target.frame:Hide()
-   end
+   -- Set initial visibility with a slight delay to ensure it takes effect
+   C_Timer.After(0.01, function()
+     if settings.where == CHAT_MSG_WHISPER_INFORM or settings.where == BN_WHISPER then
+       target.frame:Show()
+     else
+       target.frame:Hide()
+     end
+   end)
 
    -- 4. Bottom Buttons
    local b = AceGUI:Create("SimpleGroup")
