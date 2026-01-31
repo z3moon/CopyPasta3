@@ -354,8 +354,10 @@ function addon:DrawGroup(container, group)
    addon.selectedGroup = group
    local isTemp = (group == "temp")
    local savedItem = nil
+   local savedIndex = nil
    if not isTemp then
-      savedItem = settings.savedItems[tonumber(group)]
+      savedIndex = tonumber(group)
+      savedItem = settings.savedItems[savedIndex]
       if not savedItem then
          -- Fallback
          group = "temp"
@@ -365,11 +367,6 @@ function addon:DrawGroup(container, group)
    end
 
    container:ReleaseChildren()
-   -- We use a SimpleGroup to hold the List layout, because container (content of TreeGroup)
-   -- might have specific layout behavior.
-   -- But TreeGroup content SetLayout works fine.
-   -- container:SetLayout("List") -- Doing this might release children again or reset?
-   -- AceGUI: "SetLayout" releases children? No.
 
    local scroll = AceGUI:Create("ScrollFrame")
    scroll:SetLayout("List")
@@ -377,7 +374,102 @@ function addon:DrawGroup(container, group)
    scroll:SetFullHeight(true)
    container:AddChild(scroll)
 
-   -- 1. Editor
+   -- 1. Controls Group (Title, Store, Move, Delete) - Now at Top
+   local sg = AceGUI:Create("SimpleGroup")
+   sg:SetLayout("Flow")
+   sg:SetFullWidth(true)
+   scroll:AddChild(sg)
+
+   local titleBox = AceGUI:Create("EditBox")
+   titleBox:SetLabel(L["Title:"] or "Title:")
+   titleBox:SetWidth(150)
+   if not isTemp and savedItem then
+       titleBox:SetText(savedItem.title or "")
+   else
+       titleBox:SetText("")
+   end
+   sg:AddChild(titleBox)
+
+   local storeBtn = AceGUI:Create("Button")
+   storeBtn:SetText(L["Store"] or "Store")
+   storeBtn:SetWidth(80)
+   storeBtn:SetCallback("OnClick", function()
+       local title = titleBox:GetText()
+       local content = addon.edit:GetText() -- Need to access edit box which is created later
+
+       if isTemp then
+           -- New Item
+           if not title or title == "" then
+              chatMsg(L["Please enter a title to store this command."] or "Please enter a title to store this command.")
+              return
+           end
+           local newItem = { title = title, content = content }
+           table.insert(settings.savedItems, newItem)
+           addon.tempContent = ""  -- Clear scratchpad
+           addon:UpdateTree()
+           addon.tree:SelectByValue(tostring(#settings.savedItems))
+       else
+           -- Update existing
+           local idx = tonumber(group)
+           if settings.savedItems[idx] then
+               settings.savedItems[idx].title = title
+               settings.savedItems[idx].content = content
+               addon:UpdateTree()
+               addon.tree:SelectByValue(group)
+               chatMsg(L["Saved."] or "Saved.")
+           end
+       end
+   end)
+   sg:AddChild(storeBtn)
+
+   -- Move Up / Down Buttons
+   if not isTemp then
+       local upBtn = AceGUI:Create("Button")
+       upBtn:SetText("^")
+       upBtn:SetWidth(40)
+       if savedIndex and savedIndex > 1 then
+           upBtn:SetCallback("OnClick", function()
+               local curr = settings.savedItems[savedIndex]
+               local prev = settings.savedItems[savedIndex - 1]
+               settings.savedItems[savedIndex] = prev
+               settings.savedItems[savedIndex - 1] = curr
+               addon:UpdateTree()
+               addon.tree:SelectByValue(tostring(savedIndex - 1))
+           end)
+       else
+           upBtn:SetDisabled(true)
+       end
+       sg:AddChild(upBtn)
+
+       local downBtn = AceGUI:Create("Button")
+       downBtn:SetText("v")
+       downBtn:SetWidth(40)
+       if savedIndex and savedIndex < #settings.savedItems then
+           downBtn:SetCallback("OnClick", function()
+               local curr = settings.savedItems[savedIndex]
+               local nextItem = settings.savedItems[savedIndex + 1]
+               settings.savedItems[savedIndex] = nextItem
+               settings.savedItems[savedIndex + 1] = curr
+               addon:UpdateTree()
+               addon.tree:SelectByValue(tostring(savedIndex + 1))
+           end)
+       else
+           downBtn:SetDisabled(true)
+       end
+       sg:AddChild(downBtn)
+
+       -- Delete Button (X)
+       local deleteBtn = AceGUI:Create("Button")
+       deleteBtn:SetText("X")
+       deleteBtn:SetWidth(40)
+       deleteBtn:SetCallback("OnClick", function()
+           addon.deleteTarget = group
+           StaticPopup_Show("PASTE_DELETE_CONFIRM")
+       end)
+       sg:AddChild(deleteBtn)
+   end
+
+   -- 2. Editor
    local edit = AceGUI:Create("MultiLineEditBox")
    edit:SetFullWidth(true)
    edit:SetLabel("")
@@ -414,70 +506,6 @@ function addon:DrawGroup(container, group)
        edit:SetText(addon.tempContent or "")
    else
        edit:SetText(savedItem.content or "")
-   end
-
-   -- 2. Store / Title
-   local sg = AceGUI:Create("SimpleGroup")
-   sg:SetLayout("Flow")
-   sg:SetFullWidth(true)
-   scroll:AddChild(sg)
-
-   local titleBox = AceGUI:Create("EditBox")
-   titleBox:SetLabel(L["Title:"] or "Title:")
-   titleBox:SetWidth(200)
-   if not isTemp and savedItem then
-       titleBox:SetText(savedItem.title or "")
-   else
-       titleBox:SetText("")
-   end
-   sg:AddChild(titleBox)
-
-   -- If selecting a saved item, update title box when clicked by user?
-   -- Logic: User selects item -> Title populated above.
-
-   local storeBtn = AceGUI:Create("Button")
-   storeBtn:SetText(L["Store"] or "Store")
-   storeBtn:SetWidth(100)
-   storeBtn:SetCallback("OnClick", function()
-       local title = titleBox:GetText()
-       local content = edit:GetText()
-
-       if isTemp then
-           -- New Item
-           -- Require title?
-           if not title or title == "" then
-              chatMsg(L["Please enter a title to store this command."] or "Please enter a title to store this command.")
-              return
-           end
-           local newItem = { title = title, content = content }
-           table.insert(settings.savedItems, newItem)
-           addon.tempContent = ""  -- Clear scratchpad
-           addon:UpdateTree()
-           addon.tree:SelectByValue(tostring(#settings.savedItems))
-       else
-           -- Update existing
-           local idx = tonumber(group)
-           if settings.savedItems[idx] then
-               settings.savedItems[idx].title = title
-               settings.savedItems[idx].content = content
-               addon:UpdateTree()
-               addon.tree:SelectByValue(group)
-               chatMsg(L["Saved."] or "Saved.")
-           end
-       end
-   end)
-   sg:AddChild(storeBtn)
-
-   -- Delete button (only for saved items)
-   if not isTemp then
-       local deleteBtn = AceGUI:Create("Button")
-       deleteBtn:SetText(L["Delete"] or "Delete")
-       deleteBtn:SetWidth(100)
-       deleteBtn:SetCallback("OnClick", function()
-           addon.deleteTarget = group
-           StaticPopup_Show("PASTE_DELETE_CONFIRM")
-       end)
-       sg:AddChild(deleteBtn)
    end
 
    -- 3. Target / Where
