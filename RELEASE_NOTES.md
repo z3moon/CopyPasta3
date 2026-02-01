@@ -8,6 +8,10 @@ Instead, if you are authoring a PR for the main branch, add your release note to
 
 [NEW_RELEASE_NOTES.md](./NEW_RELEASE_NOTES.md).
 
+## 1.1.2
+- Now users can move up or down the stored items in the list.
+- The minimap icon now correctly opens the options window via right-click.
+
 ## 1.1.1
 - Show `Whisper Target` when only necessary.
 

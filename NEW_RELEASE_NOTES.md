@@ -3,5 +3,3 @@
 **If you are merging a PR into main**: please add the release note below, under the *Release notes for next branch cut*.
 
 ## Release notes for next branch cut
-- Now users can move up or down the stored items in the list.
-- The minimap icon now correctly opens the options window via right-click.
