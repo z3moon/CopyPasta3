@@ -4,3 +4,4 @@
 
 ## Release notes for next branch cut
 - Now users can move up or down the stored items in the list.
+- The minimap icon now correctly opens the options window via right-click.

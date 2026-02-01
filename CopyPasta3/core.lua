@@ -267,14 +267,7 @@ function addon:OnInitialize()
 end
 
 function addon:Config()
-  if optionsFrame then
-    if ( optionsFrame:IsShown() ) then
-      optionsFrame:Hide()
-      HideUIPanel(SettingsPanel);
-    else
-      Settings.OpenToCategory(addonName, true)
-    end
-  end
+  LibStub("AceConfigDialog-3.0"):Open(addonName)
 end
 
 function addon:OnEnable()
